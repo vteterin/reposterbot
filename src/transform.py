@@ -51,17 +51,20 @@ def is_exception_brand(brand: str | None) -> bool:
 
 
 def calc_retail_rub(usd_price: float, usd_rub: float, exception: bool) -> int:
-    """Apply the pricing formula and return rubles rounded to integer.
+    """Apply the pricing formula and return rubles rounded to the nearest 100.
 
     Default:   X * 2 * rate * 1.1  +  (X * 0.2) * rate * 1.1
     Exception: X * 2 * rate * 1.1
+
+    Uses half-up rounding (7 550 → 7 600, 7 549 → 7 500).
     """
     base = usd_price * 2 * usd_rub * 1.1
     if exception:
         total = base
     else:
         total = base + (usd_price * 0.2) * usd_rub * 1.1
-    return round(total)
+    # Half-up rounding to nearest 100
+    return int((total + 50) // 100) * 100
 
 
 def format_rub(amount: int) -> str:
