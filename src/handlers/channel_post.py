@@ -67,7 +67,8 @@ async def _send_media_group(messages: list[Message], bot: Bot) -> None:
     # Preserve original order — Telegram assigns increasing message_id within a group
     messages.sort(key=lambda m: m.message_id)
     caption_source = next((m for m in messages if m.caption), None)
-    original_caption = caption_source.caption if caption_source else ""
+    # html_text preserves entities (bold, strikethrough, links) as HTML tags
+    original_caption = caption_source.html_text if caption_source else ""
 
     retail_html = await _build_retail_caption(original_caption)
 
@@ -109,7 +110,8 @@ async def _send_media_group(messages: list[Message], bot: Bot) -> None:
 
 
 async def _handle_single(message: Message, bot: Bot) -> None:
-    text = message.text or message.caption or ""
+    # html_text picks either message.text or message.caption and preserves entities as HTML tags
+    text = message.html_text if (message.text or message.caption) else ""
     retail_html = await _build_retail_caption(text)
 
     try:
@@ -152,7 +154,7 @@ async def _build_retail_caption(source_text: str) -> str:
     html, meta = transform.transform_text(source_text, usd_rub)
     log.info(
         "Transformed: brand=%r usd=%s rub=%s exception=%s rate=%.4f",
-        meta.get("brand"), meta.get("usd_price"), meta.get("rub_price"),
+        meta.get("brand"), meta.get("usd_prices"), meta.get("rub_prices"),
         meta.get("exception"), usd_rub,
     )
     return html

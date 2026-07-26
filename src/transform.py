@@ -1,11 +1,12 @@
 """Wholesale → retail text transformation.
 
-Given a wholesale post from the source channel, produce the retail post text
-(HTML-formatted for aiogram parse_mode='HTML') with:
+Given a wholesale post from the source channel (already HTML-formatted with
+Telegram entities like <s>, <b>, <a>), produce the retail post text with:
 
-  - price recalculated by formula, RUB with thin-space thousands separator
+  - every USD price recalculated by formula, in rubles with a thin-space
+    thousands separator (including struck-through prices — the <s> tags stay)
   - retail suffix block appended (with inline links)
-  - original body preserved otherwise
+  - all other formatting preserved verbatim
 """
 import re
 from html import escape
@@ -26,12 +27,21 @@ _PRICE_RE = re.compile(
 
 
 def parse_wholesale_price(text: str) -> float | None:
-    """Return the wholesale price in USD, or None if not found."""
+    """Return the FIRST wholesale price in USD found in text, or None. Retained for backwards compat."""
     m = _PRICE_RE.search(text)
     if not m:
         return None
     raw = m.group("pre") or m.group("post")
     return float(raw.replace(",", "."))
+
+
+def find_all_prices(text: str) -> list[float]:
+    """Return all USD prices found in text, in order of appearance."""
+    out = []
+    for m in _PRICE_RE.finditer(text):
+        raw = m.group("pre") or m.group("post")
+        out.append(float(raw.replace(",", ".")))
+    return out
 
 
 def detect_brand(text: str) -> str | None:
@@ -63,24 +73,30 @@ def calc_retail_rub(usd_price: float, usd_rub: float, exception: bool) -> int:
         total = base
     else:
         total = base + (usd_price * 0.2) * usd_rub * 1.1
-    # Half-up rounding to nearest 100
     return int((total + 50) // 100) * 100
 
 
 def format_rub(amount: int) -> str:
     """Format integer rubles with a thin-space (U+2009) thousands separator, ' ₽' suffix."""
-    return f"{amount:,}".replace(",", " ") + " ₽"
+    return f"{amount:,}".replace(",", " ") + " ₽"
 
 
-def replace_price_in_text(text: str, rub_display: str) -> str:
-    """Replace the first found USD price occurrence with the ruble display string.
+def replace_all_prices(text: str, usd_rub: float, exception: bool) -> tuple[str, list[tuple[float, int]]]:
+    """Replace every USD price in text with the recalculated ruble display.
 
-    Keeps everything else (SALE❗️, description, materials, etc.) intact.
+    Returns (new_text, list_of_(usd, rub)_pairs).
     """
-    m = _PRICE_RE.search(text)
-    if not m:
-        return text
-    return text[: m.start()] + rub_display + text[m.end():]
+    conversions: list[tuple[float, int]] = []
+
+    def _repl(m: re.Match) -> str:
+        raw = m.group("pre") or m.group("post")
+        usd = float(raw.replace(",", "."))
+        rub = calc_retail_rub(usd, usd_rub, exception)
+        conversions.append((usd, rub))
+        return format_rub(rub)
+
+    new_text = _PRICE_RE.sub(_repl, text)
+    return new_text, conversions
 
 
 def build_retail_suffix_html() -> str:
@@ -96,29 +112,22 @@ def build_retail_suffix_html() -> str:
     return "\n".join(lines)
 
 
-def transform_text(wholesale_text: str, usd_rub: float) -> tuple[str, dict]:
-    """Return (retail_html, meta).
+def transform_text(wholesale_html: str, usd_rub: float) -> tuple[str, dict]:
+    """Transform a wholesale post (as HTML text with Telegram entities) into retail HTML.
 
-    meta contains: brand, usd_price, rub_price, exception, transformed (bool)
+    Returns (retail_html, meta).
+    meta contains: brand, usd_prices, rub_prices, exception, transformed (bool)
     """
-    brand = detect_brand(wholesale_text)
-    usd_price = parse_wholesale_price(wholesale_text)
+    brand = detect_brand(wholesale_html)
     exception = is_exception_brand(brand)
 
-    if usd_price is None:
-        # No price found — return original text + retail suffix unchanged
-        html_body = escape(wholesale_text)
-        html = html_body + "\n\n" + build_retail_suffix_html()
-        return html, {
-            "brand": brand, "usd_price": None, "rub_price": None,
-            "exception": exception, "transformed": False,
-        }
+    new_body, conversions = replace_all_prices(wholesale_html, usd_rub, exception)
+    html = new_body + "\n\n" + build_retail_suffix_html()
 
-    rub_price = calc_retail_rub(usd_price, usd_rub, exception)
-    rub_display = format_rub(rub_price)
-    new_body = replace_price_in_text(wholesale_text, rub_display)
-    html = escape(new_body) + "\n\n" + build_retail_suffix_html()
     return html, {
-        "brand": brand, "usd_price": usd_price, "rub_price": rub_price,
-        "exception": exception, "transformed": True,
+        "brand": brand,
+        "usd_prices": [c[0] for c in conversions],
+        "rub_prices": [c[1] for c in conversions],
+        "exception": exception,
+        "transformed": bool(conversions),
     }

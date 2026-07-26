@@ -70,8 +70,8 @@ async def cmd_testpost(message: Message, command: CommandObject) -> None:
     usd_rub = await rate.get_usd_rub()
     html, meta = transform.transform_text(payload, usd_rub)
     diag = (
-        f"brand={meta['brand']!r} usd={meta['usd_price']} "
-        f"rub={meta['rub_price']} exception={meta['exception']}"
+        f"brand={meta['brand']!r} usd={meta['usd_prices']} "
+        f"rub={meta['rub_prices']} exception={meta['exception']}"
     )
     await message.answer(f"<pre>{diag}</pre>\n\n{html}", parse_mode=ParseMode.HTML)
 
