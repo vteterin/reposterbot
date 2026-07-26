@@ -69,12 +69,13 @@ def get_last_rate(key: str) -> float | None:
     return row["value"] if row else None
 
 
-def record_message_map(source_chat: int, source_msg: int, dest_chat: int, dest_msg: int) -> None:
+def record_message_map(source_chat: int, source_message_id: int,
+                       dest_chat: int, dest_message_id: int) -> None:
     with connect() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO message_map "
             "(source_chat_id, source_message_id, dest_chat_id, dest_message_id) VALUES (?, ?, ?, ?)",
-            (source_chat, source_msg, dest_chat, dest_msg),
+            (source_chat, source_message_id, dest_chat, dest_message_id),
         )
 
 
